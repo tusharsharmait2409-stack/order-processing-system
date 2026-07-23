@@ -1,0 +1,26 @@
+# DEV profile: zero external dependencies. In-memory H2 + local Caffeine cache.
+spring:
+  datasource:
+    url: jdbc:h2:mem:orders;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true          # browse the DB at /h2-console during the demo
+      path: /h2-console
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=5m
+  jpa:
+    hibernate:
+      ddl-auto: create-drop    # fresh in-memory schema on every dev run
+
+# Dev doesn't run Redis (Caffeine is used for caching), so disable the Redis
+# health check — otherwise Actuator's /health tries to ping localhost:6379 and
+# logs a noisy "Connection refused" stack trace. Prod keeps it enabled.
+management:
+  health:
+    redis:
+      enabled: false

@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.ecommerce</groupId>
+    <artifactId>order-processing-system</artifactId>
+    <version>1.0.0</version>
+    <name>order-processing-system</name>
+    <description>Backend for an E-commerce Order Processing System</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <springdoc.version>2.3.0</springdoc.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+    </properties>
+
+    <dependencies>
+        <!-- Web / REST -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Persistence (JPA / Hibernate) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Bean validation (@Valid, @NotNull, etc.) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Caching abstraction -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
+        <!-- Caffeine: local in-memory cache (dev profile) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Redis: distributed cache (prod profile) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Actuator: health, metrics, monitoring endpoints -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Micrometer -> Prometheus metrics registry -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- OpenAPI v3 / Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- H2: in-memory DB for dev/test -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- PostgreSQL driver (prod profile) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- MapStruct: DTO <-> entity mapping -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- Lombok: boilerplate reduction -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ===== Test dependencies ===== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.19.3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <!-- JaCoCo: test coverage report at target/site/jacoco/index.html -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

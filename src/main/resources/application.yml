@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: order-processing-system
+  # Default profile is dev (H2 + Caffeine) so the app runs with zero external setup.
+  profiles:
+    active: dev
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update        # schema managed by Hibernate (per-profile; dev uses create-drop)
+    properties:
+      hibernate:
+        format_sql: true
+
+  # Redis is used only as a CACHE, never as a repository store. Disabling Redis
+  # repository scanning silences the harmless "Could not safely identify store
+  # assignment for repository ... OrderRepository" startup warning.
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+# ---- Scheduling / background job ----
+order:
+  processing:
+    # PENDING -> PROCESSING sweep interval. 5 min = 300000 ms (overridable per env).
+    pending-sweep-interval-ms: 300000
+    # Max orders promoted per sweep (protects a single run from unbounded work).
+    batch-size: 500
+
+# ---- Actuator / metrics ----
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: order-processing-system
+
+# ---- OpenAPI / Swagger UI ----
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

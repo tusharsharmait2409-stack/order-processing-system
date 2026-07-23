@@ -1,0 +1,40 @@
+# Local production-like stack: PostgreSQL + Redis.
+# Bring it up, then run the app with the `prod` profile:
+#
+#   docker compose up -d
+#   mvn spring-boot:run -Dspring-boot.run.profiles=prod
+#
+# The app reads DB_URL / DB_USERNAME / DB_PASSWORD / REDIS_HOST / REDIS_PORT
+# (see application-prod.yml). Defaults below match those defaults.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ops-postgres
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ops-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

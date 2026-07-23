@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "Order Processing System",
+    "description": "REST API for the E-commerce Order Processing System. Set the `baseUrl` variable (default http://localhost:8080). After creating an order, copy its id into `orderId` and its order number into `orderNumber`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "orderId", "value": "1" },
+    { "key": "orderNumber", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Create order",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": 1001,\n  \"customerEmail\": \"jane@example.com\",\n  \"customerName\": \"Jane Doe\",\n  \"shippingAddress\": \"123 Main St\",\n  \"notes\": \"Leave at the door\",\n  \"items\": [\n    { \"productId\": 101, \"productSku\": \"SKU-1\", \"productName\": \"Widget\", \"quantity\": 2, \"unitPrice\": 19.99 },\n    { \"productId\": 102, \"productSku\": \"SKU-2\", \"productName\": \"Gadget\", \"quantity\": 1, \"unitPrice\": 49.50 }\n  ]\n}"
+        },
+        "description": "Creates a PENDING order with multiple items. Total computed server-side (89.48). Returns 201 + Location header."
+      }
+    },
+    {
+      "name": "Create order (invalid - 400)",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": 1001,\n  \"items\": [\n    { \"productId\": 101, \"productSku\": \"SKU-1\", \"productName\": \"Widget\", \"quantity\": 0, \"unitPrice\": 19.99 }\n  ]\n}"
+        },
+        "description": "quantity=0 fails @Positive validation. Returns 400 with a fieldErrors array."
+      }
+    },
+    {
+      "name": "Get order by id",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderId}}"] },
+        "description": "Fetch a single order by id. 200 if found, 404 otherwise."
+      }
+    },
+    {
+      "name": "Get order by order number",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/number/{{orderNumber}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "number", "{{orderNumber}}"] },
+        "description": "Fetch a single order by its ORD-... order number."
+      }
+    },
+    {
+      "name": "List orders (all)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders?page=0&size=20&sortBy=createdAt&sortDir=desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders"],
+          "query": [
+            { "key": "page", "value": "0" },
+            { "key": "size", "value": "20" },
+            { "key": "sortBy", "value": "createdAt" },
+            { "key": "sortDir", "value": "desc" }
+          ]
+        },
+        "description": "Paged list of all orders, newest first."
+      }
+    },
+    {
+      "name": "List orders (filter by status + customer)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders?status=PENDING&customerId=1001&page=0&size=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders"],
+          "query": [
+            { "key": "status", "value": "PENDING" },
+            { "key": "customerId", "value": "1001" },
+            { "key": "page", "value": "0" },
+            { "key": "size", "value": "20" }
+          ]
+        },
+        "description": "List filtered by status and/or customerId."
+      }
+    },
+    {
+      "name": "Update status",
+      "request": {
+        "method": "PATCH",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderId}}", "status"] },
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"PROCESSING\",\n  \"reason\": \"Order verified\"\n}" },
+        "description": "Advance the order. Legal: PENDING -> PROCESSING -> SHIPPED -> DELIVERED. Illegal jumps return 409."
+      }
+    },
+    {
+      "name": "Cancel order",
+      "request": {
+        "method": "POST",
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "{{orderId}}", "cancel"] },
+        "description": "Cancel an order. 200 if still PENDING, 409 otherwise."
+      }
+    },
+    {
+      "name": "Statistics",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/v1/orders/statistics", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders", "statistics"] },
+        "description": "Total order count, breakdown by status, and total revenue."
+      }
+    }
+  ]
+}
