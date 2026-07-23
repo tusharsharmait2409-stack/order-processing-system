@@ -1,202 +1,234 @@
 # Order Processing System
 
-A backend service for an e-commerce **Order Processing System**, built with Spring Boot 3 and
-Java 17. It exposes a RESTful API to create orders, track them through their lifecycle, list
-and filter them, and cancel them — with a background job that automatically advances pending
-orders, caching, metrics, and a full test suite.
+A production-ready E-commerce Order Processing backend built with Spring Boot 3 and Java 17.
 
 ## Features
 
-1. **Create an order** with multiple line items — total computed server-side.
-2. **Retrieve an order** by numeric id *or* by human-friendly order number.
-3. **Update order status** through a strict lifecycle
-   `PENDING → PROCESSING → SHIPPED → DELIVERED`; illegal transitions are rejected.
-4. **Background job** advancing `PENDING` orders to `PROCESSING` **every 5 minutes**.
-5. **List orders** with optional status and customer filters, sorting, and pagination.
-6. **Cancel an order**, allowed **only while it is still `PENDING`**.
-7. **Order statistics** — totals, a breakdown by status, and total revenue.
+- **Order Management**: Create, retrieve, update, and cancel orders
+- **Status Tracking**: Full lifecycle (PENDING → PROCESSING → SHIPPED → DELIVERED)
+- **Background Processing**: Scheduled job auto-advances pending orders every 5 minutes
+- **Caching**: Caffeine (dev) / Redis (prod) for fast order look-ups
+- **Metrics**: Prometheus-compatible metrics via Micrometer
+- **API Documentation**: OpenAPI 3.0 with Swagger UI
+- **Testing**: Unit, controller, integration, and Testcontainers tests
 
-Plus the additional requirements: design patterns, a proper DB + cache schema, OpenAPI v3
-documentation, comprehensive tests, and metrics/monitoring.
+## Tech Stack
 
-## Tech stack
-
-| Concern | Choice |
-|---|---|
-| Framework | Spring Boot 3.2 |
+| Component | Technology |
+|-----------|------------|
+| Framework | Spring Boot 3.2.0 |
 | Language | Java 17 |
-| Persistence | Spring Data JPA / Hibernate |
-| Database | H2 (dev/test) · PostgreSQL (prod) |
-| Cache | Caffeine (dev) · Redis (prod) |
-| API docs | springdoc-openapi (OpenAPI 3) |
+| Build Tool | Maven |
+| Database | PostgreSQL / H2 |
+| Cache | Caffeine / Redis |
+| Documentation | SpringDoc OpenAPI |
 | Metrics | Micrometer + Prometheus |
-| Testing | JUnit 5, Mockito, Spring Boot Test (MockMvc), Testcontainers |
+| Testing | JUnit 5, Mockito, Testcontainers |
 | Coverage | JaCoCo |
-| Build | Maven |
-| Boilerplate | Lombok |
 
-## Getting started
+## Getting Started
 
 ### Prerequisites
 
-- JDK 17
-- Maven
-- Docker (optional — only for the Postgres integration test or the prod stack)
+- Java 17+
+- Maven 3.8+
+- PostgreSQL 15+ (for production)
 
-### Run locally (dev, zero setup)
-
-Runs on in-memory **H2** + **Caffeine** — no database or Redis required.
+### Running Locally
 
 ```bash
+# Clone the repository
+git clone https://github.com/tusharsharmait2409-stack/order-processing-system.git
+cd order-processing-system
+
+# Build the project
+mvn clean install
+
+# Run with H2 database (development)
 mvn spring-boot:run
-```
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/swagger-ui.html
-- OpenAPI JSON: http://localhost:8080/v3/api-docs
-- H2 console: http://localhost:8080/h2-console (JDBC `jdbc:h2:mem:orders`, user `sa`)
-- Health / Prometheus: http://localhost:8080/actuator/health · /actuator/prometheus
-
-### Run with PostgreSQL + Redis (prod)
-
-```bash
-docker compose up -d      # PostgreSQL + Redis (see docker-compose.yml / .env.example)
+# Run with PostgreSQL (production)
 mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
-### Tests + coverage
+### Running Tests
 
 ```bash
-mvn test                  # runs unit + web-slice + integration tests
-mvn test jacoco:report    # coverage at target/site/jacoco/index.html
+# Run all tests
+mvn test
+
+# Run with coverage report
+mvn test jacoco:report
+
+# View coverage report
+open target/site/jacoco/index.html
 ```
 
-## API reference
+## API Endpoints
 
-Base path: `/api/v1/orders`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/orders` | Create a new order |
+| GET | `/api/v1/orders/{id}` | Get order by ID |
+| GET | `/api/v1/orders/number/{orderNumber}` | Get order by order number |
+| GET | `/api/v1/orders` | List all orders (paginated) |
+| PATCH | `/api/v1/orders/{id}/status` | Update order status |
+| POST | `/api/v1/orders/{id}/cancel` | Cancel an order |
+| GET | `/api/v1/orders/statistics` | Get order statistics |
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/orders` | Create a new order (201) |
-| `GET` | `/api/v1/orders/{id}` | Get order by id |
-| `GET` | `/api/v1/orders/number/{orderNumber}` | Get order by order number |
-| `GET` | `/api/v1/orders` | List orders (`status`, `customerId`, `page`, `size`, `sortBy`, `sortDir`) |
-| `PATCH` | `/api/v1/orders/{id}/status` | Update status (body: `status`, optional `reason`) |
-| `POST` | `/api/v1/orders/{id}/cancel` | Cancel (only if PENDING) |
-| `GET` | `/api/v1/orders/statistics` | Totals, breakdown by status, revenue |
+### API Documentation
 
-### Example — create an order
+- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **OpenAPI Spec**: http://localhost:8080/v3/api-docs
+
+## Order Status Flow
+
+```
+PENDING ──────────────────→ PROCESSING ───→ SHIPPED ───→ DELIVERED
+    │
+    └──→ CANCELLED   (only allowed while PENDING)
+```
+
+## Example Usage
+
+### Create an Order
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/orders \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
   -d '{
     "customerId": 1001,
     "customerEmail": "jane@example.com",
     "customerName": "Jane Doe",
     "shippingAddress": "123 Main St",
+    "notes": "Leave at the door",
     "items": [
-      { "productId": 101, "productSku": "SKU-1", "productName": "Widget", "quantity": 2, "unitPrice": 19.99 }
+      {
+        "productId": 101,
+        "productName": "Widget",
+        "productSku": "SKU-1",
+        "quantity": 2,
+        "unitPrice": 19.99
+      }
     ]
   }'
 ```
 
-Returns `201` with the order (`status: "PENDING"`, `orderNumber: "ORD-…"`, `totalAmount: 39.98`).
+### Get Order by ID
 
-### Error shape
-
-Every failure returns a consistent envelope:
-
-```json
-{
-  "timestamp": "2026-07-23T13:28:08.315672Z",
-  "status": 400,
-  "error": "Bad Request",
-  "message": "Validation failed",
-  "path": "/api/v1/orders",
-  "fieldErrors": [
-    { "field": "items[0].quantity", "message": "quantity must be greater than 0" }
-  ]
-}
+```bash
+curl http://localhost:8080/api/v1/orders/1
 ```
 
-## Order status flow
+### Update Order Status
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/orders/1/status \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "PROCESSING", "reason": "Order verified" }'
+```
+
+### Cancel an Order
+
+```bash
+curl -X POST http://localhost:8080/api/v1/orders/1/cancel
+```
+
+### List Orders with Filtering
+
+```bash
+# All orders
+curl "http://localhost:8080/api/v1/orders"
+
+# Filter by status
+curl "http://localhost:8080/api/v1/orders?status=PENDING"
+
+# Filter by customer
+curl "http://localhost:8080/api/v1/orders?customerId=1001"
+
+# Paginated with sorting
+curl "http://localhost:8080/api/v1/orders?page=0&size=20&sortBy=createdAt&sortDir=desc"
+```
+
+## Monitoring
+
+```bash
+# Health check
+curl http://localhost:8080/actuator/health
+
+# Prometheus metrics
+curl http://localhost:8080/actuator/prometheus
+```
+
+## Project Structure
 
 ```
-PENDING ──▶ PROCESSING ──▶ SHIPPED ──▶ DELIVERED
-   │
-   └──▶ CANCELLED        (only from PENDING)
-```
-
-## Design patterns and principles
-
-- **State pattern** — legal transitions encoded on the `OrderStatus` enum.
-- **Rich domain model** — behaviour (`transitionTo`, `cancel`) lives on `Order`.
-- **Repository pattern** — Spring Data JPA.
-- **DTO + Mapper** — API records decoupled from JPA entities.
-- **Dependency inversion** — controllers/scheduler depend on the `OrderService` interface.
-- **Chain of responsibility** — one `@RestControllerAdvice` for all error translation.
-- **Template method** — `BaseEntity` centralises id, `@Version`, and audit timestamps
-  (`@SuperBuilder` keeps the builder inheritance-aware).
-- **Optimistic locking** — `@Version` guards concurrent updates.
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full architecture.
-
-## Project structure
-
-```
-src/main/java/com/ecommerce/order/
-├── config/         OpenAPI + cache configuration
-├── controller/     REST controllers
-├── exception/      custom exceptions + global handler
-├── mapper/         DTO <-> entity mapping
-├── metrics/        Micrometer meters
-├── model/
-│   ├── dto/        request/response records
-│   ├── entity/     JPA entities + BaseEntity
-│   └── enums/      OrderStatus (state machine)
-├── repository/     Spring Data JPA
-├── scheduler/      background job
-├── service/        business logic
-└── OrderProcessingApplication.java
-src/test/java/com/ecommerce/order/
-├── controller/     web-slice tests
-├── integration/    full @SpringBootTest + MockMvc
-├── model/          domain/enum unit tests
-├── repository/     Testcontainers Postgres test
-└── service/        service unit tests
-docs/               ARCHITECTURE.md, openapi.yaml, AI_USAGE_NOTES.md
-postman/            Postman collection
+src/
+├── main/
+│   ├── java/com/ecommerce/order/
+│   │   ├── config/          # Configuration classes
+│   │   ├── controller/      # REST controllers
+│   │   ├── exception/       # Custom exceptions & handler
+│   │   ├── mapper/          # DTO <-> entity mapping
+│   │   ├── metrics/         # Micrometer metrics
+│   │   ├── model/
+│   │   │   ├── dto/         # Data Transfer Objects
+│   │   │   ├── entity/      # JPA entities
+│   │   │   └── enums/       # Enumerations
+│   │   ├── repository/      # Data access layer
+│   │   ├── scheduler/       # Background jobs
+│   │   ├── service/         # Business logic
+│   │   └── OrderProcessingApplication.java
+│   └── resources/
+│       ├── application.yml
+│       ├── application-dev.yml
+│       └── application-prod.yml
+├── test/
+│   └── java/com/ecommerce/order/
+│       ├── controller/      # Controller tests
+│       ├── integration/     # Integration tests
+│       ├── model/           # Domain/enum tests
+│       ├── repository/      # Repository tests
+│       └── service/         # Service tests
+└── docs/
+    ├── ARCHITECTURE.md      # Architecture documentation
+    └── openapi.yaml         # OpenAPI specification
 ```
 
 ## Configuration
 
-| Property | Default | Meaning |
-|---|---|---|
-| `order.processing.pending-sweep-interval-ms` | `300000` (5 min) | Background sweep interval |
-| `order.processing.batch-size` | `500` | Max orders promoted per sweep |
-| `spring.jpa.hibernate.ddl-auto` | `update` (prod) / `create-drop` (dev) | Schema management |
-| `spring.profiles.active` | `dev` | Active profile |
+| Property | Default | Description |
+|----------|---------|-------------|
+| `server.port` | 8080 | Server port |
+| `spring.jpa.hibernate.ddl-auto` | create-drop (dev) / update (prod) | Schema mode |
+| `spring.cache.type` | caffeine (dev) / redis (prod) | Cache provider |
+| `order.processing.pending-sweep-interval-ms` | 300000 | Background job interval (5 min) |
+| `order.processing.batch-size` | 500 | Max orders promoted per sweep |
 
-## Metrics
+### Environment Variables (Production)
 
-Exposed via Actuator, scrapeable at `/actuator/prometheus`:
-`orders.created`, `orders.cancelled`, `orders.status.transition{from,to}`,
-`orders.pending.swept`, and the `orders.create.latency` timer (p50/p95/p99).
+| Variable | Description |
+|----------|-------------|
+| `DB_URL` | Database URL |
+| `DB_USERNAME` | Database username |
+| `DB_PASSWORD` | Database password |
+| `REDIS_HOST` | Redis host |
+| `REDIS_PORT` | Redis port |
 
-## Testing with Postman
+## Design Patterns Used
 
-Import `postman/OrderProcessingSystem.postman_collection.json`. It covers all endpoints
-(plus an invalid-order example that triggers a 400). Set `baseUrl`, and after creating an
-order copy its id into the `orderId` variable.
+1. **Repository Pattern** – Data access abstraction
+2. **Service Layer Pattern** – Business logic encapsulation
+3. **DTO Pattern** – API contract separation
+4. **Builder Pattern** – Object construction
+5. **State Pattern** – Order status transitions
+6. **Template Method** – Base entity behavior
 
-## Use of AI during development
+## Documentation
 
-AI assistance was used throughout (scaffolding, drafting entities/DTOs/tests, config).
-Generated code was always reviewed, compiled, and tested. The concrete issues that surfaced
-and how each was corrected are documented in
-[`docs/AI_USAGE_NOTES.md`](docs/AI_USAGE_NOTES.md).
+- [Architecture Documentation](docs/ARCHITECTURE.md)
+- [OpenAPI Specification](docs/openapi.yaml)
 
 ## License
 
-[MIT](LICENSE) © 2026 Tushar Sharma
+MIT License
