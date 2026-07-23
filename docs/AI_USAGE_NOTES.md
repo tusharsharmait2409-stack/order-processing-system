@@ -1,144 +1,325 @@
-# AI Usage & Issues Log
+# AI Usage Documentation
 
-This file tracks where AI assistance (ChatGPT / Cursor-style tooling) was used during
-development, the concrete issues that surfaced, and how they were corrected. It feeds
-the assignment's required "what did you use AI for / what issues / how corrected" write-up.
+This document details how AI tools (Claude) were used in building the Order Processing System,
+including the prompt given, issues encountered, and corrections made.
 
----
+## Overview
 
-## Issue #1 — Lombok `@Builder` could not set inherited `id`
+The Order Processing System was built with extensive AI assistance using Claude. The AI was
+given a comprehensive requirement specification and iteratively built out all components. Every
+piece of generated code was reviewed, compiled, and tested before being accepted.
 
-**Context:** Common fields (`id`, `version`, `createdAt`, `updatedAt`) were extracted
-into a `BaseEntity` `@MappedSuperclass`, with `Order` extending it.
+## Initial Prompt
 
-**Problem:** `Order` was annotated with Lombok's plain `@Builder`. A plain `@Builder`
-only sees fields declared *on the same class*, so `Order.builder()` could not populate
-the inherited `id` (and other `BaseEntity`) fields. Builds that tried to set those
-fields failed / the fields silently stayed null.
+The project started with a detailed requirement specification:
 
-**Root cause:** `@Builder` is not inheritance-aware.
+```
+Building an Order Processing System
 
-**Fix:** Switched both the parent (`BaseEntity`) and child (`Order`) to Lombok's
-`@SuperBuilder`, which generates an inheritance-aware builder chain so subclasses can
-set superclass fields.
+Objective: Build the backend for an E-commerce Order Processing System.
 
-**Verification:** `Order.builder().customerId(...).status(...).build()` now compiles and
-the inherited audit/version fields are populated.
+Requirements:
+1. Create an order with multiple items
+2. Retrieve order details by order ID
+3. Update order status (PENDING, PROCESSING, SHIPPED, DELIVERED)
+4. Background job to auto-update PENDING → PROCESSING every 5 minutes
+5. List all orders with optional status filter
+6. Cancel order (only if PENDING)
 
----
+Additional Requirements:
+- Use design patterns and principles
+- Proper database and cache schema design
+- OpenAPI v3 spec documentation
+- Comprehensive test cases
+- Metrics, reports, coding standards
+```
 
-## Issue #2 — Referenced `OrderMetrics` before it existed
+## Development Process
 
-**Context:** `OrderServiceImpl` was wired to record metrics (orders created, status
-transitions, cancellations) by injecting an `OrderMetrics` collaborator.
+### 1. Project Structure Creation
 
-**Problem:** The service referenced `OrderMetrics` (import + constructor field +
-method calls) before the class was actually written, so the module did not compile
-("cannot find symbol: class OrderMetrics").
+**AI Action**: Created a complete Maven project following standard Spring Boot conventions.
 
-**Root cause:** Introduced the dependency at the call site before creating the
-dependency itself.
+**Directories Created**:
+- `src/main/java/com/ecommerce/order/` - main source code
+- `src/test/java/com/ecommerce/order/` - test code
+- `docs/` - documentation
 
-**Fix:** Created the `OrderMetrics` component first — a thin Micrometer wrapper
-exposing `incrementCreated()`, `incrementCancelled()`, and `recordTransition(from, to)`
-— then injected it into `OrderServiceImpl` via constructor injection.
+**What Worked**: The standard structure was generated correctly on the first attempt.
 
-**Lesson / prevention:** Build a collaborator (or at least a stub) before referencing
-it, or let the IDE generate the missing class. Constructor injection also makes the
-missing dependency obvious immediately rather than failing later at runtime.
+### 2. Entity Design
 
----
+**AI Action**: Created JPA entities with proper annotations.
 
-## Issue #3 — Used `@SchedulerLock` without the ShedLock dependency
+**Issue Found**: Common fields (`id`, `version`, timestamps) were moved into a `BaseEntity`
+superclass. The entity used Lombok's plain `@Builder`, which only sees fields on the same
+class, so `Order.builder()` could not set the inherited `id`.
 
-**Context:** To make the scheduled PENDING -> PROCESSING sweep safe to run on
-multiple instances, the scheduler method was annotated with `@SchedulerLock` so
-only one node executes each tick.
+**Correction Made**: Switched to `@SuperBuilder` (inheritance-aware) on both parent and child.
 
-**Problem:** `@SchedulerLock` comes from the ShedLock library, which was not on the
-classpath — `pom.xml` had no ShedLock dependency. The annotation didn't resolve
-("package net.javacrumbs.shedlock... does not exist") and, even once imported,
-would have been a no-op without a configured `LockProvider`.
+```java
+// Before (broken)
+@Builder
+public class Order extends BaseEntity { ... }
 
-**Root cause:** Added the annotation before adding the library and its required
-supporting configuration.
+// After (fixed)
+@SuperBuilder
+public class Order extends BaseEntity { ... }
 
-**Initial fix (later reverted):** Added `shedlock-spring` + `shedlock-provider-jdbc-template`,
-a `shedlock` Flyway table, a `JdbcTemplateLockProvider` config, and `@SchedulerLock`.
+// BaseEntity also needs it
+@SuperBuilder
+@NoArgsConstructor
+public abstract class BaseEntity { ... }
+```
 
-**Final decision — removed ShedLock, used an `AtomicBoolean` guard instead.**
-ShedLock solves *strict single-node* scheduling, but for this assignment it was
-over-engineered: it pulled in an external library, an extra DB table, and config for
-a guarantee we didn't strictly need. The actual risk we care about — a slow sweep
-overlapping itself — is handled by a simple in-process `AtomicBoolean`
-(`compareAndSet(false, true)` at the start, reset in a `finally`). Cross-instance
-row safety is already guaranteed by the guarded, set-based SQL UPDATE in the service
-(each row is promoted exactly once). If strict single-node execution were ever
-required, ShedLock could be reintroduced.
+### 3. Service Layer Implementation
 
-**Lesson / prevention:** (1) An annotation is only active if its library is on the
-classpath *and* the supporting config is enabled. (2) Match the solution to the actual
-requirement — prefer the simplest mechanism (AtomicBoolean) over heavier infrastructure
-(distributed lock) unless the requirement genuinely calls for it.
+**AI Action**: Created `OrderServiceImpl` with the business logic.
 
----
+**Issue Found**: The service referenced an `OrderMetrics` class before it was created, so the
+module did not compile ("cannot find symbol").
 
-## Issue #4 — Unused imports (dead code) flagged by the IDE
+**Correction Made**: Created `OrderMetrics` first (a thin Micrometer wrapper), then injected it.
 
-**Context:** AI-generated code sometimes leaves imports behind after logic is edited
-(e.g. an `HttpStatus` import kept after switching a return style).
+```java
+@Component
+public class OrderMetrics {
+    private final Counter ordersCreated;
+    // counters + a creation-latency timer
+}
+```
 
-**Problem:** Unused imports are dead code — they add noise, can hide real
-dependencies, and some builds/linters treat them as warnings or errors.
+### 4. Scheduler Implementation
 
-**Fix / practice:** Reviewed all classes for unused imports and removed any dead ones.
-A full scan of the current source tree shows **no unused imports** (`HttpStatus` is used
-in `@ResponseStatus(HttpStatus.CREATED)` and across `GlobalExceptionHandler`).
+**AI Action**: Created the background job scheduler.
 
-**Lesson / prevention:** Always run "Optimize Imports" (IntelliJ) / rely on the IDE's
-unused-import inspection after AI edits, and keep it part of the review pass before commit.
+**Issue Found**: Used the `@SchedulerLock` annotation from the ShedLock library, which wasn't in
+`pom.xml`, so it didn't compile.
 
----
+**Correction Made**: Rather than add an external dependency for a guarantee this project didn't
+strictly need, removed ShedLock and implemented a simpler in-process concurrency guard with
+`AtomicBoolean`. Cross-instance safety is already handled by a guarded set-based SQL UPDATE.
 
-## Issue #5 — Compiles with Maven but fails in IntelliJ (Lombok vs JDK 26)
+```java
+// Before (needs an external library)
+@SchedulerLock(name = "processPendingOrders", lockAtMostFor = "4m")
 
-**Context:** `mvn clean compile` / `mvn test` passed on the command line, but running the
-app inside IntelliJ failed at compile time with:
-`java.lang.ExceptionInInitializerError ... com.sun.tools.javac.code.TypeTag :: UNKNOWN`.
+// After (self-contained)
+private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-**Problem:** Installing Maven via Homebrew pulled in OpenJDK 26 as a dependency. IntelliJ
-auto-selected that newest JDK (26) as the Project SDK, while the terminal used
-`JAVA_HOME=17`. Lombok 1.18.30 (managed by Spring Boot 3.2) hooks into the compiler's
-internal API and does not support JDK 26, so its annotation processor crashed — but only
-in the IDE, which used JDK 26.
+public void processPendingOrders() {
+    if (!isRunning.compareAndSet(false, true)) {
+        log.warn("Previous job still running, skipping");
+        return;
+    }
+    try {
+        // ... processing logic
+    } finally {
+        isRunning.set(false);
+    }
+}
+```
 
-**Root cause:** Two different JDKs — terminal on 17, IntelliJ Project SDK on 26 — plus
-Lombok's tight coupling to `com.sun.tools.javac` internals.
+### 5. Controller Implementation
 
-**Fix:** In IntelliJ *Project Structure*, set **Project SDK → JDK 17** and **Language level
-→ 17** (module SDK inherits Project SDK). Rebuilt; the app compiles and runs in the IDE.
+**AI Action**: Created the REST controller with OpenAPI annotations.
 
-**Lesson / prevention:** Keep the IDE's Project SDK aligned with `JAVA_HOME`. "Works on the
-command line but not in the IDE" is almost always a JDK/toolchain mismatch. Optionally pin
-the build JDK with a Maven toolchains file.
+**Issue Found**: An unused import (`HttpStatus`) was left behind after an edit and flagged by
+the IDE.
 
----
+**Correction Made**: Reviewed all classes and removed dead imports. (In the final code
+`HttpStatus` is actually used — in `@ResponseStatus(HttpStatus.CREATED)` and the exception
+handler — so no unused import remains.)
 
-## Issue #6 — Noisy Redis "Connection refused" trace in dev
+### 6. Test Implementation
 
-**Context:** After the app booted cleanly in the IDE, the console logged a Lettuce/Netty
-`Connection refused: localhost:6379` stack trace.
+**AI Action**: Created unit, controller, and integration tests.
 
-**Problem:** `spring-boot-starter-data-redis` is on the classpath (Redis is the prod cache).
-IntelliJ's Spring Boot dashboard polls `/actuator/health`, which invokes the Redis health
-indicator; since dev uses Caffeine and runs no Redis, the health ping failed and logged a
-scary (but non-fatal) trace.
+**Issue Found**: Test code that built entities via the builder couldn't set inherited fields.
 
-**Root cause:** An Actuator health indicator was active for a dependency that isn't running
-in the dev profile.
+**Correction Made**: Already fixed by the `@SuperBuilder` change in the entities — the tests
+compiled and passed once the entity fix was in place.
 
-**Fix:** Disabled the Redis health check in `application-dev.yml`
-(`management.health.redis.enabled: false`). Prod keeps it enabled. Logs are clean.
+### 7. Works on the CLI but Fails in the IDE (JDK mismatch)
 
-**Lesson / prevention:** Health indicators auto-activate for any dependency on the
-classpath. Disable the ones whose backing service isn't present in a given profile.
+**Issue Found**: `mvn test` passed on the command line, but running the app in IntelliJ failed
+to compile with `ExceptionInInitializerError ... TypeTag :: UNKNOWN`.
+
+**Correction Made**: Installing Maven had pulled in JDK 26, and IntelliJ auto-selected it as
+the Project SDK, while the terminal used JDK 17. Lombok 1.18.30 doesn't support JDK 26. Set the
+IntelliJ Project SDK and language level to **17**. Lesson: keep the IDE's SDK aligned with
+`JAVA_HOME`.
+
+### 8. Noisy Redis Health Check in Dev
+
+**Issue Found**: A `Connection refused: localhost:6379` stack trace appeared in dev logs.
+
+**Correction Made**: `spring-boot-starter-data-redis` is on the classpath (Redis is the prod
+cache), so Actuator's health check tried to ping Redis. Dev uses Caffeine, so disabled the
+Redis health indicator in the dev profile.
+
+## Design Decisions Made
+
+### 1. State Pattern for Order Status
+
+Status transitions are encoded on the enum as a state machine.
+
+```java
+public enum OrderStatus {
+    PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED;
+
+    public boolean canTransitionTo(OrderStatus target) {
+        return allowedTransitions().contains(target);
+    }
+
+    public Set<OrderStatus> allowedTransitions() {
+        return switch (this) {
+            case PENDING    -> Set.of(PROCESSING, CANCELLED);
+            case PROCESSING -> Set.of(SHIPPED);
+            case SHIPPED    -> Set.of(DELIVERED);
+            case DELIVERED, CANCELLED -> Set.of();
+        };
+    }
+}
+```
+
+**Rationale**: Keeps the transition rules in one place and makes illegal transitions impossible.
+"Cancel only if PENDING" falls out for free, since CANCELLED is only reachable from PENDING.
+
+### 2. Optimistic Locking
+
+A `@Version` field guards against concurrent modification.
+
+```java
+@Version
+private Long version;
+```
+
+**Rationale**: The background job and a manual status update might touch the same order at once.
+Optimistic locking detects the conflict instead of silently overwriting. It was chosen over
+pessimistic locking because conflicts are rare and it avoids holding database locks.
+
+### 3. Batch Updates for the Scheduler
+
+The scheduler promotes pending orders with one set-based query, not row-by-row.
+
+```java
+@Modifying
+@Query("update Order o set o.status = :to, o.updatedAt = :now " +
+       "where o.status = :from and o.id in :ids")
+int bulkTransition(OrderStatus from, OrderStatus to, List<Long> ids, Instant now);
+```
+
+**Rationale**: Loading hundreds of orders to update them one by one is inefficient. The
+`where o.status = :from` guard also makes the update idempotent and safe across instances.
+
+### 4. Hand-written Mapper (instead of MapStruct)
+
+DTO ↔ entity conversion is done by a small hand-written `OrderMapper` component.
+
+**Rationale**: The create path also runs domain logic (wiring items to the parent, computing the
+total), which is clearer in explicit code than in generated mappings. It also avoids an extra
+annotation processor. MapStruct would be a fine choice if mappings grew large.
+
+## API Design Decisions
+
+### 1. Dual Access Pattern
+
+Orders can be fetched by numeric ID or by order number.
+
+```
+GET /api/v1/orders/{id}
+GET /api/v1/orders/number/{orderNumber}
+```
+
+**Rationale**: Internal systems use the numeric ID (fast joins); customers reference the
+human-friendly order number (`ORD-yyyyMMdd-XXXXXXXX`) shown on their receipt.
+
+### 2. POST for Cancel Instead of DELETE
+
+```
+POST /api/v1/orders/{id}/cancel
+```
+
+**Rationale**: Cancellation is a state change, not a deletion. The record remains for audit.
+
+### 3. PATCH for Status Update
+
+```
+PATCH /api/v1/orders/{id}/status
+```
+
+**Rationale**: PATCH indicates a partial update — only the status changes, not the whole order.
+
+## Code Quality Measures
+
+### 1. Validation
+All request DTOs use Bean Validation annotations.
+
+```java
+@NotNull(message = "customerId is required")
+private Long customerId;
+
+@Email(message = "customerEmail must be a valid email")
+private String customerEmail;
+```
+
+### 2. Exception Handling
+Centralised handling via `@RestControllerAdvice`:
+- custom exceptions for business rules
+- one consistent `ApiError` response shape (timestamp, status, error, message, path, fieldErrors)
+
+### 3. Logging
+- **INFO**: business operations (order created, status changed, cancelled)
+- **DEBUG**: quiet details (e.g. sweep found nothing)
+- **WARN**: non-fatal issues (job skipped because previous run still in flight)
+- **ERROR**: unexpected failures
+
+### 4. Metrics
+Prometheus-compatible metrics via Micrometer:
+- `orders.created`, `orders.cancelled` (counters)
+- `orders.status.transition` (counter, tagged with from/to)
+- `orders.pending.swept` (counter)
+- `orders.create.latency` (timer, p50/p95/p99)
+
+## Testing Strategy
+
+AI generated tests at multiple levels:
+
+**Unit Tests** — domain (state machine, entity behaviour) and service (Mockito, mocked
+collaborators).
+
+**Controller Tests** — `@WebMvcTest` + MockMvc for endpoints, validation, and error mapping.
+
+**Integration Tests** — full Spring context + MockMvc over H2, end-to-end flow including the
+error translations.
+
+**Repository Tests** — Testcontainers against real PostgreSQL, skipped gracefully when Docker
+isn't available.
+
+## What AI Did Well
+
+1. **Comprehensive code generation** — a complete, working application from the requirements.
+2. **Design patterns** — correctly applied Repository, Service Layer, DTO, Builder, State, and
+   Template Method patterns.
+3. **Spring Boot best practices** — proper annotations, profiles, and conventions.
+4. **Documentation** — generated the OpenAPI spec, architecture docs, and README.
+5. **Testing** — meaningful tests covering happy paths and edge cases.
+
+## What Required Human Correction
+
+1. **Missing dependencies** — generated code using a library not in `pom.xml` (ShedLock).
+2. **Lombok inheritance** — the initial builder didn't work with a superclass (`@SuperBuilder`).
+3. **Referencing code before creating it** — `OrderMetrics` used before it existed.
+4. **Toolchain mismatch** — IDE used JDK 26 (unsupported by Lombok) while the CLI used JDK 17.
+5. **Environment config** — a noisy Redis health check in dev that needed disabling.
+6. **Minor cleanup** — unused imports.
+
+## Recommendations for AI-Assisted Development
+
+1. **Iterate** — build and verify incrementally rather than generating everything at once.
+2. **Use IDE feedback** — catch compilation errors and unused imports early.
+3. **Check dependencies** — make sure every import has a matching entry in the build file.
+4. **Test frequently** — run the suite often to catch regressions.
+5. **Review generated code** — for correctness, security, performance, and maintainability;
+   and be willing to *remove* complexity (like ShedLock) when a simpler solution fits.
